@@ -74,6 +74,7 @@ class SaleResource extends RoleGuardedResource
                         TextEntry::make('folio')->label(__('sales.fields.folio'))->prefix('#'),
                         TextEntry::make('created_at')->label(__('sales.fields.date'))->dateTime('d/m/Y H:i:s'),
                         TextEntry::make('user.name')->label(__('sales.fields.user')),
+                        TextEntry::make('client.name')->label(__('sales.fields.client'))->placeholder('—'),
                         TextEntry::make('status')->label(__('sales.fields.status'))->badge(),
                         TextEntry::make('type')->label(__('sales.fields.type')),
                         TextEntry::make('total')->label(__('sales.fields.total'))->money('MXN', locale: 'es_MX'),
@@ -144,6 +145,10 @@ class SaleResource extends RoleGuardedResource
                     ->dateTime('d/m/Y H:i'),
                 TextColumn::make('user.name')
                     ->label(__('sales.fields.user')),
+                TextColumn::make('client.name')
+                    ->label(__('sales.fields.client'))
+                    ->searchable()
+                    ->placeholder('—'),
                 TextColumn::make('payments.method')
                     ->label(__('sales.fields.payment_method'))
                     ->listWithLineBreaks(),
@@ -159,6 +164,10 @@ class SaleResource extends RoleGuardedResource
                 SelectFilter::make('status')
                     ->label(__('sales.fields.status'))
                     ->options(SaleStatus::class),
+                SelectFilter::make('client_id')
+                    ->label(__('sales.fields.client'))
+                    ->relationship('client', 'name')
+                    ->searchable(),
                 SelectFilter::make('payment_method')
                     ->label(__('sales.fields.payment_method'))
                     ->options(PaymentMethod::class)

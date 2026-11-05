@@ -29,7 +29,7 @@ class SettingResource extends RoleGuardedResource
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedCog6Tooth;
 
-    protected static ?int $navigationSort = 4;
+    protected static ?int $navigationSort = 5;
 
     public static function getModelLabel(): string
     {

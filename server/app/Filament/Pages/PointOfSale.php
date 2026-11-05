@@ -6,7 +6,9 @@ use App\Enums\PaymentMethod;
 use App\Enums\ProductUnit;
 use App\Enums\Role;
 use App\Filament\Concerns\ShownInBranchSection;
+use App\Filament\Resources\Clients\ClientResource;
 use App\Models\BranchProduct;
+use App\Models\Client;
 use App\Services\SaleRejected;
 use App\Services\Sales;
 use App\Support\CurrentBranch;
@@ -14,6 +16,7 @@ use App\Support\PosCart;
 use BackedEnum;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Hidden;
+use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\ToggleButtons;
 use Filament\Infolists\Components\TextEntry;
@@ -47,9 +50,14 @@ class PointOfSale extends Page
     protected Width|string|null $maxContentWidth = Width::Full;
 
     /**
-     * @var list<array{id: int, name: string, price: string}>
+     * @var list<array{id: int, name: string, price: string, picture: ?string}>
      */
     public array $results = [];
+
+    /**
+     * Whether a search is active. Without one the panel shows the best sellers.
+     */
+    public bool $searching = false;
 
     public static function getNavigationLabel(): string
     {
@@ -77,7 +85,7 @@ class PointOfSale extends Page
      */
     public function scan(string $code): void
     {
-        $this->results = [];
+        $this->clearSearch();
         $code = trim($code);
 
         $row = $this->rows()
@@ -104,11 +112,12 @@ class PointOfSale extends Page
         $term = trim($term);
 
         if ($term === '') {
-            $this->results = [];
+            $this->clearSearch();
 
             return;
         }
 
+        $this->searching = true;
         $this->results = $this->rows()
             ->whereHas('product', fn (Builder $products) => $products->where(fn (Builder $matches) => $matches
                 ->where('name', 'like', "%{$term}%")
@@ -117,17 +126,13 @@ class PointOfSale extends Page
             ->with('product')
             ->limit(self::SEARCH_LIMIT)
             ->get()
-            ->map(fn (BranchProduct $row): array => [
-                'id' => $row->id,
-                'name' => $row->product->name,
-                'price' => $this->money($row->price),
-            ])
+            ->map(fn (BranchProduct $row): array => $this->productForList($row))
             ->all();
     }
 
     public function addProduct(int $branchProductId): void
     {
-        $this->results = [];
+        $this->clearSearch();
 
         $row = $this->rows()->find($branchProductId);
 
@@ -225,6 +230,23 @@ class PointOfSale extends Page
                     ->label(__('sales.fields.reference'))
                     ->maxLength(255)
                     ->visible(fn (Get $get): bool => ! in_array($this->selectedMethod($get), [null, PaymentMethod::Cash], true)),
+                Select::make('client_id')
+                    ->label(__('sales.fields.client'))
+                    ->placeholder(__('sales.no_client'))
+                    ->searchable()
+                    ->getSearchResultsUsing(fn (string $search): array => Client::query()
+                        ->matching($search)
+                        ->orderBy('name')
+                        ->limit(self::SEARCH_LIMIT)
+                        ->get()
+                        ->mapWithKeys(fn (Client $client): array => [$client->id => $client->select_label])
+                        ->all())
+                    ->getOptionLabelUsing(fn (mixed $value): ?string => Client::query()->find($value)?->select_label)
+                    ->createOptionForm(ClientResource::essentialFields())
+                    ->createOptionUsing(fn (array $data): int => Client::query()->create($data)->getKey())
+                    ->createOptionAction(fn (Action $action): Action => $action
+                        ->modalHeading(__('clients.new'))
+                        ->modalWidth(Width::Medium)),
             ])
             ->action(fn (array $data, Action $action) => $this->completeSale($data, $action));
     }
@@ -254,6 +276,7 @@ class PointOfSale extends Page
             'items' => $cart->items(),
             'total' => $this->money($cart->total()),
             'currentBranch' => app(CurrentBranch::class),
+            'bestSellers' => $this->searching ? [] : $this->bestSellers(),
         ];
     }
 
@@ -282,6 +305,7 @@ class PointOfSale extends Page
                 $method,
                 $method === PaymentMethod::Cash ? $cart->total() : null,
                 $data['reference'] ?? null,
+                isset($data['client_id']) ? (int) $data['client_id'] : null,
             );
         } catch (SaleRejected $rejected) {
             Notification::make()->title($rejected->getMessage())->danger()->send();
@@ -300,13 +324,48 @@ class PointOfSale extends Page
         $this->dispatch('pos-focus-scan');
     }
 
+    /**
+     * @return list<array{id: int, name: string, price: string, picture: ?string}>
+     */
+    private function bestSellers(): array
+    {
+        return app(Sales::class)
+            ->bestSellers(app(CurrentBranch::class)->get())
+            ->map(fn (BranchProduct $row): array => $this->productForList($row))
+            ->all();
+    }
+
+    /**
+     * @return array{id: int, name: string, price: string, picture: ?string}
+     */
+    private function productForList(BranchProduct $row): array
+    {
+        return [
+            'id' => $row->id,
+            'name' => $row->product->name,
+            'price' => $this->money($row->price),
+            'picture' => $row->product->picture_url,
+        ];
+    }
+
+    private function clearSearch(): void
+    {
+        $this->searching = false;
+        $this->results = [];
+    }
+
     private function addRow(BranchProduct $row): void
     {
         PosCart::current()->add($row);
 
         if ($row->unit === ProductUnit::Kilogram) {
             $this->dispatch('pos-focus-quantity', id: $row->id);
+
+            return;
         }
+
+        // Adding reorders the lines, which can drop focus and lose the next scan.
+        $this->dispatch('pos-focus-scan');
     }
 
     /**

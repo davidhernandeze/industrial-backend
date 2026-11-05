@@ -9,15 +9,22 @@ use App\Enums\Role;
 use App\Filament\Pages\PointOfSale;
 use App\Models\Branch;
 use App\Models\BranchProduct;
+use App\Models\Client;
 use App\Models\Product;
 use App\Models\Sale;
 use App\Models\User;
 use App\Services\Inventory;
+use App\Services\Sales;
 use App\Support\PosCart;
+use Filament\Actions\Testing\TestAction;
 use Filament\Auth\Pages\Login;
 use Filament\Facades\Filament;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -60,6 +67,12 @@ class PointOfSaleTest extends TestCase
             'unit' => $unit,
             'price' => $price,
         ]);
+    }
+
+    private function sellNow(BranchProduct $row, string $quantity): void
+    {
+        app(Sales::class)->create((string) Str::uuid(), [$row->id => $quantity], PaymentMethod::Cash);
+        Cache::flush();
     }
 
     private function pos(): mixed
@@ -127,6 +140,79 @@ class PointOfSaleTest extends TestCase
         $html = $this->get(PointOfSale::getUrl())->assertOk()->getContent();
 
         $this->assertSame(1, substr_count($html, 'id="current-branch"'));
+    }
+
+    public function test_the_search_bar_sits_above_the_keyboard(): void
+    {
+        $this->get(PointOfSale::getUrl())
+            ->assertOk()
+            ->assertSeeInOrder([__('point_of_sale.scan_placeholder'), 'Espacio'], escape: false);
+    }
+
+    public function test_search_results_list_small_pictures_without_an_overlay(): void
+    {
+        Storage::fake('public');
+        $this->bread->product->replacePicture(UploadedFile::fake()->image('pan.png'));
+
+        $this->pos()->call('search', 'Pan')
+            ->assertSet('results.0.picture', $this->bread->product->fresh()->picture_url)
+            ->assertDontSeeHtml('bottom-full')
+            ->assertSeeHtml('src="'.e($this->bread->product->fresh()->picture_url).'"');
+    }
+
+    public function test_the_search_column_comes_first_then_the_sale_then_the_total(): void
+    {
+        $this->pos()->assertSeeInOrder(['Espacio', __('point_of_sale.best_sellers'), __('point_of_sale.empty'), __('point_of_sale.shortcut_hint')]);
+    }
+
+    public function test_it_shows_best_sellers_when_nothing_is_typed(): void
+    {
+        $this->pos()
+            ->assertSee(__('point_of_sale.best_sellers'))
+            ->assertSee(__('point_of_sale.no_best_sellers'));
+
+        app(Inventory::class)->record($this->cheese, MovementType::Purchase, '50');
+        $this->sellNow($this->cheese, '2');
+
+        $this->pos()->assertSee(__('point_of_sale.best_sellers'))->assertSeeInOrder([__('point_of_sale.best_sellers'), 'Queso']);
+    }
+
+    public function test_a_search_replaces_the_best_sellers_and_clearing_it_brings_them_back(): void
+    {
+        $page = $this->pos()->call('search', 'Pan')->assertDontSee(__('point_of_sale.best_sellers'))->assertSet('searching', true);
+
+        $page->call('search', '')->assertSee(__('point_of_sale.best_sellers'))->assertSet('searching', false);
+    }
+
+    public function test_a_search_without_matches_says_so(): void
+    {
+        $this->pos()->call('search', 'zzz')->assertSee(__('point_of_sale.no_results'));
+    }
+
+    public function test_adding_a_best_seller_works_and_leaves_the_list_in_place(): void
+    {
+        app(Inventory::class)->record($this->cheese, MovementType::Purchase, '50');
+        $this->sellNow($this->cheese, '2');
+
+        $this->pos()->call('addProduct', $this->cheese->id)->assertSee(__('point_of_sale.best_sellers'));
+
+        $this->assertArrayHasKey($this->cheese->id, PosCart::current()->lines());
+    }
+
+    public function test_sale_lines_show_the_product_picture(): void
+    {
+        Storage::fake('public');
+        $this->bread->product->replacePicture(UploadedFile::fake()->image('pan.png'));
+
+        $this->pos()->call('scan', '7501')
+            ->assertSeeHtml('src="'.e($this->bread->product->fresh()->picture_url).'"');
+    }
+
+    public function test_a_product_without_a_picture_shows_a_placeholder(): void
+    {
+        $this->pos()->call('search', 'Queso')
+            ->assertSet('results.0.picture', null)
+            ->assertSeeHtml('data-pos-thumbnail-placeholder');
     }
 
     public function test_the_on_screen_keyboard_is_shown(): void
@@ -217,6 +303,16 @@ class PointOfSaleTest extends TestCase
     public function test_a_piece_product_does_not_ask_for_a_quantity(): void
     {
         $this->pos()->call('scan', '7501')->assertNotDispatched('pos-focus-quantity');
+    }
+
+    public function test_adding_a_piece_returns_focus_to_the_search_for_the_next_scan(): void
+    {
+        $this->pos()->call('addProduct', $this->bread->id)->assertDispatched('pos-focus-scan');
+    }
+
+    public function test_keystrokes_with_nothing_focused_go_to_the_search(): void
+    {
+        $this->get(PointOfSale::getUrl())->assertSee('x-on:keydown.window', escape: false);
     }
 
     public function test_searching_lists_matches_and_adding_one_clears_the_results(): void
@@ -404,5 +500,68 @@ class PointOfSaleTest extends TestCase
     public function test_a_single_branch_cashier_sees_no_branch_selector(): void
     {
         $this->get(PointOfSale::getUrl())->assertOk()->assertDontSee('id="current-branch"', escape: false);
+    }
+
+    public function test_checkout_needs_no_client(): void
+    {
+        app(Inventory::class)->record($this->bread, MovementType::Purchase, '10');
+
+        $this->pos()->call('scan', '7501')
+            ->callAction('checkout', data: ['payment_method' => PaymentMethod::Cash->value])
+            ->assertHasNoFormErrors();
+
+        $this->assertNull(Sale::query()->sole()->client_id);
+    }
+
+    public function test_checkout_records_the_chosen_client(): void
+    {
+        app(Inventory::class)->record($this->bread, MovementType::Purchase, '10');
+        $client = Client::factory()->create();
+
+        $this->pos()->call('scan', '7501')
+            ->callAction('checkout', data: ['payment_method' => PaymentMethod::Cash->value, 'client_id' => $client->id])
+            ->assertHasNoFormErrors();
+
+        $this->assertSame($client->id, Sale::query()->sole()->client_id);
+    }
+
+    public function test_a_client_deleted_during_checkout_keeps_the_cart(): void
+    {
+        app(Inventory::class)->record($this->bread, MovementType::Purchase, '10');
+        $client = Client::factory()->create();
+
+        $page = $this->pos()->call('scan', '7501')
+            ->mountAction('checkout')
+            ->fillForm(['client_id' => $client->id]);
+
+        $client->delete();
+
+        $page->callMountedAction()->assertHasFormErrors(['client_id']);
+
+        $this->assertSame(0, Sale::query()->count());
+        $this->assertFalse(PosCart::current()->isEmpty());
+    }
+
+    public function test_a_cashier_can_add_a_client_during_checkout(): void
+    {
+        app(Inventory::class)->record($this->bread, MovementType::Purchase, '10');
+
+        $this->pos()->call('scan', '7501')
+            ->mountAction('checkout')
+            ->callAction(TestAction::make('createOption')->schemaComponent('client_id', schema: 'mountedActionSchema0'), data: ['name' => 'Nueva', 'phone' => '6140000000'])
+            ->assertHasNoFormErrors()
+            ->callMountedAction();
+
+        $client = Client::query()->sole();
+
+        $this->assertSame('Nueva', $client->name);
+        $this->assertSame($client->id, Sale::query()->sole()->client_id);
+    }
+
+    public function test_the_optional_client_comes_after_the_payment_fields(): void
+    {
+        $this->pos()->call('scan', '7501')
+            ->mountAction('checkout')
+            ->assertSeeInOrder([__('sales.fields.payment_method'), __('sales.fields.client'), __('point_of_sale.confirm')]);
     }
 }

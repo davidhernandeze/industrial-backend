@@ -4,6 +4,8 @@ return [
     'model_label' => 'venta',
     'plural_model_label' => 'ventas',
 
+    'no_client' => 'Sin cliente',
+
     'sections' => [
         'lines' => 'Productos',
         'payments' => 'Pago',
@@ -49,6 +51,7 @@ return [
         'branch_id' => 'Sucursal',
         'user_id' => 'Cajero',
         'user' => 'Cajero',
+        'client' => 'Cliente',
         'status' => 'Estado',
         'type' => 'Tipo',
         'total' => 'Total',
@@ -71,6 +74,7 @@ return [
         'empty' => 'Agrega al menos un producto.',
         'insufficient_payment' => 'El monto recibido no cubre el total.',
         'unavailable_product' => 'Uno de los productos ya no está disponible en esta sucursal.',
+        'unavailable_client' => 'Este cliente ya no está disponible.',
         'already_cancelled' => 'Esta venta ya fue cancelada.',
     ],
 ];

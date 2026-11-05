@@ -14,6 +14,7 @@ use App\Filament\Resources\Sales\SaleResource;
 use App\Filament\Resources\Sales\Widgets\SalesOverview;
 use App\Models\Branch;
 use App\Models\BranchProduct;
+use App\Models\Client;
 use App\Models\Product;
 use App\Models\Sale;
 use App\Models\User;
@@ -223,5 +224,28 @@ class ManageSalesTest extends TestCase
 
         Livewire::test(SaleHistory::class, ['record' => $sale->getRouteKey()])
             ->assertSee('Estado: Pagada → Cancelada');
+    }
+
+    public function test_the_table_shows_and_filters_by_client(): void
+    {
+        $client = Client::factory()->create(['name' => 'Juana']);
+        $hers = app(Sales::class)->create((string) Str::uuid(), [$this->row->id => '1'], PaymentMethod::Cash, clientId: $client->id);
+        $anonymous = $this->sale();
+
+        Livewire::test(ManageSales::class)
+            ->assertSee('Juana')
+            ->filterTable('client_id', $client->id)
+            ->assertCanSeeTableRecords([$hers])
+            ->assertCanNotSeeTableRecords([$anonymous]);
+    }
+
+    public function test_a_sale_shows_its_client_even_after_the_client_is_deleted(): void
+    {
+        $client = Client::factory()->create(['name' => 'Juana']);
+        $sale = app(Sales::class)->create((string) Str::uuid(), [$this->row->id => '1'], PaymentMethod::Cash, clientId: $client->id);
+
+        $client->delete();
+
+        $this->get(SaleResource::getUrl('view', ['record' => $sale]))->assertOk()->assertSee('Juana');
     }
 }

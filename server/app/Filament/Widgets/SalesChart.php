@@ -39,6 +39,14 @@ class SalesChart extends ChartWidget
     /**
      * @return array<string, mixed>
      */
+    protected function getOptions(): array
+    {
+        return ['scales' => ['y' => ['min' => 0, 'suggestedMax' => 100]]];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
     protected function getData(): array
     {
         $days = app(Sales::class)->dailyTotals(app(CurrentBranch::class)->get(), self::DAYS);

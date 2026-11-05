@@ -128,7 +128,9 @@ browser for instant feedback. The domain logic in `App\Services\Sales` would not
 - A scan is an exact barcode or SKU lookup. The input sits behind `wire:ignore` so updates cannot
   disturb it. Typing searches by name.
 - Each cart has a uuid, so submitting twice cannot charge twice.
-- An on-screen keyboard feeds the same search input, for touch screens.
+- The till has three columns on desktop: product search, the current sale, and the total with its
+  options. The search column holds the bar, an on-screen keyboard and a plain list of results, or the
+  branch's five best sellers of the last 30 days when nothing is typed.
 - Recibido is filled with the total and locked, so cash sales record no change.
 - `sale_payments` holds one row per sale today. It exists so split payments need no data migration.
   Payments are assumed to cover the sale on creation.
@@ -149,6 +151,16 @@ queue, after the database commit, so a mail failure cannot undo a sale.
 
 After changing `.env`, run `podman compose restart queue scheduler`. The worker keeps the values it
 started with, so without a restart jobs run with old settings, such as the wrong language or mailer.
+
+## Clients
+
+Clients belong to the company, not to a branch, so they are not branch scoped. Admins and branch managers manage them under Clientes. Cashiers have no access to that module; they search for a client during checkout, or add one with just a name and phone (`ClientResource::essentialFields()`).
+
+A sale's `client_id` is optional. A soft deleted client stays on its past sales but can't be picked for a new one: `Sales::create()` rejects it.
+
+## User manual
+
+`/admin/manual` is a step by step tutorial for admins and branch managers, from a fresh installation to running the till. Its text lives in `lang/es/manual.php`; a section's `roles` key sets the badge showing who performs that step. Update the manual when a screen, button or rule it describes changes.
 
 ## Soft deletes and entity logs
 

@@ -10,8 +10,10 @@ use App\Enums\SaleStatus;
 use App\Enums\SaleType;
 use App\Models\Branch;
 use App\Models\BranchProduct;
+use App\Models\Client;
 use App\Models\InventoryMovement;
 use App\Models\Product;
+use App\Models\Sale;
 use App\Models\User;
 use App\Notifications\SaleOutOfStock;
 use App\Services\Inventory;
@@ -332,6 +334,54 @@ class SalesTest extends TestCase
         $this->assertSame('0.000', BranchProduct::withTrashed()->find($this->bread->id)->stock);
     }
 
+    public function test_best_sellers_rank_by_quantity_and_stop_at_the_limit(): void
+    {
+        $rows = collect(range(1, 6))->map(fn (int $n): BranchProduct => $this->row("Producto {$n}", ProductUnit::Piece, '1.00'));
+
+        foreach ($rows as $index => $row) {
+            $this->stock($row, '100');
+            $this->sell([$row->id => (string) ($index + 1)]);
+        }
+
+        $best = $this->sales->bestSellers($this->branch);
+
+        $this->assertSame($rows->reverse()->take(5)->pluck('id')->values()->all(), $best->pluck('id')->all());
+    }
+
+    public function test_best_sellers_subtract_cancellations(): void
+    {
+        $this->stock($this->milk, '100');
+        $this->stock($this->bread, '100');
+        $big = $this->sell([$this->milk->id => '10']);
+        $this->sell([$this->bread->id => '2']);
+        $this->sales->cancel($big, 'Motivo');
+
+        $this->assertSame([$this->bread->id], $this->sales->bestSellers($this->branch)->pluck('id')->all());
+    }
+
+    public function test_best_sellers_ignore_old_sales_and_other_branches(): void
+    {
+        $this->stock($this->milk, '100');
+        $this->travel(-40)->days();
+        $this->sell([$this->milk->id => '5']);
+        $this->travelBack();
+
+        $this->assertTrue($this->sales->bestSellers($this->branch)->isEmpty());
+        $this->assertTrue($this->sales->bestSellers(Branch::factory()->create())->isEmpty());
+    }
+
+    public function test_best_sellers_skip_products_that_are_no_longer_available_even_when_cached(): void
+    {
+        $this->stock($this->milk, '100');
+        $this->stock($this->bread, '100');
+        $this->sell([$this->milk->id => '5', $this->bread->id => '1']);
+        $this->sales->bestSellers($this->branch);
+
+        $this->milk->delete();
+
+        $this->assertSame([$this->bread->id], $this->sales->bestSellers($this->branch)->pluck('id')->all());
+    }
+
     public function test_the_overview_only_counts_todays_paid_sales(): void
     {
         $this->travel(-2)->days();
@@ -359,5 +409,46 @@ class SalesTest extends TestCase
 
         $this->assertSame(0, $overview['count']);
         $this->assertSame('0', $overview['average']);
+    }
+
+    public function test_a_sale_can_belong_to_a_client(): void
+    {
+        $client = Client::factory()->create();
+
+        $sale = $this->sales->create((string) Str::uuid(), [$this->bread->id => '1'], PaymentMethod::Cash, clientId: $client->id);
+
+        $this->assertTrue($sale->client->is($client));
+    }
+
+    public function test_a_sale_needs_no_client(): void
+    {
+        $this->assertNull($this->sell()->client_id);
+    }
+
+    public function test_a_deleted_client_rejects_the_sale_without_touching_stock(): void
+    {
+        $client = Client::factory()->create();
+        $client->delete();
+        $stock = $this->bread->fresh()->stock;
+
+        try {
+            $this->sales->create((string) Str::uuid(), [$this->bread->id => '1'], PaymentMethod::Cash, clientId: $client->id);
+            $this->fail('The sale should be rejected.');
+        } catch (SaleRejected $rejected) {
+            $this->assertSame(__('sales.errors.unavailable_client'), $rejected->getMessage());
+        }
+
+        $this->assertSame(0, Sale::query()->count());
+        $this->assertSame($stock, $this->bread->fresh()->stock);
+    }
+
+    public function test_past_sales_keep_a_deleted_client(): void
+    {
+        $client = Client::factory()->create();
+        $sale = $this->sales->create((string) Str::uuid(), [$this->bread->id => '1'], PaymentMethod::Cash, clientId: $client->id);
+
+        $client->delete();
+
+        $this->assertSame($client->name, $sale->fresh()->client->name);
     }
 }

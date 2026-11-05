@@ -9,6 +9,7 @@ use App\Enums\SaleStatus;
 use App\Enums\SaleType;
 use App\Models\Branch;
 use App\Models\BranchProduct;
+use App\Models\Client;
 use App\Models\InventoryMovement;
 use App\Models\Sale;
 use App\Models\SalePayment;
@@ -17,6 +18,7 @@ use App\Notifications\SaleOutOfStock;
 use App\Support\CurrentBranch;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Notification;
 
@@ -26,6 +28,13 @@ use Illuminate\Support\Facades\Notification;
  */
 class Sales
 {
+    private const int BEST_SELLERS_CACHE_MINUTES = 10;
+
+    /**
+     * Extra ranked products kept in the cache, in case some leave the branch before it expires.
+     */
+    private const int BEST_SELLERS_SPARE = 3;
+
     public function __construct(private Inventory $inventory) {}
 
     /**
@@ -40,18 +49,23 @@ class Sales
         PaymentMethod $method,
         ?string $amountReceived = null,
         ?string $reference = null,
+        ?int $clientId = null,
     ): Sale {
         if ($lines === []) {
             throw new SaleRejected(__('sales.errors.empty'));
         }
 
-        $sale = DB::transaction(function () use ($uuid, $lines, $method, $amountReceived, $reference): Sale {
+        $sale = DB::transaction(function () use ($uuid, $lines, $method, $amountReceived, $reference, $clientId): Sale {
             $branch = Branch::query()->lockForUpdate()->findOrFail(app(CurrentBranch::class)->get()?->getKey());
 
             $existing = Sale::query()->where('uuid', $uuid)->first();
 
             if ($existing !== null) {
                 return $existing;
+            }
+
+            if ($clientId !== null && ! Client::query()->whereKey($clientId)->exists()) {
+                throw new SaleRejected(__('sales.errors.unavailable_client'));
             }
 
             $rows = $this->rowsFor($branch, $lines);
@@ -68,6 +82,7 @@ class Sales
                 'uuid' => $uuid,
                 'folio' => (int) Sale::withTrashed()->where('branch_id', $branch->id)->max('folio') + 1,
                 'user_id' => auth()->id(),
+                'client_id' => $clientId,
                 'status' => SaleStatus::Paid,
                 'type' => SaleType::PointOfSale,
                 'total' => $total,
@@ -197,6 +212,43 @@ class Sales
                 'count' => (int) ($rows[$day]->sales ?? 0),
             ]];
         });
+    }
+
+    /**
+     * The branch's most sold products of the last days, net of cancellations. The ranking is
+     * cached briefly because the till reads it constantly. Prices and availability are live.
+     *
+     * @return Collection<int, BranchProduct>
+     */
+    public function bestSellers(Branch $branch, int $limit = 5, int $days = 30): Collection
+    {
+        $ids = Cache::remember(
+            "sales:best-sellers:{$branch->id}:{$limit}:{$days}",
+            now()->addMinutes(self::BEST_SELLERS_CACHE_MINUTES),
+            fn (): array => InventoryMovement::query()
+                ->where('branch_id', $branch->id)
+                ->where('created_at', '>=', now()->subDays($days))
+                ->whereIn('type', [MovementType::Sale, MovementType::SaleCancellation])
+                ->groupBy('branch_product_id')
+                ->havingRaw('SUM(quantity) < 0')
+                ->orderByRaw('SUM(quantity)')
+                ->limit($limit * self::BEST_SELLERS_SPARE)
+                ->pluck('branch_product_id')
+                ->all(),
+        );
+
+        $rows = BranchProduct::query()
+            ->whereKey($ids)
+            ->whereHas('product', fn (Builder $products) => $products->withoutTrashed())
+            ->with('product')
+            ->get()
+            ->keyBy('id');
+
+        return collect($ids)
+            ->filter(fn (int $id): bool => $rows->has($id))
+            ->take($limit)
+            ->map(fn (int $id): BranchProduct => $rows[$id])
+            ->values();
     }
 
     /**

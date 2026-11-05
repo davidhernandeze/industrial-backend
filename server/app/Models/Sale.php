@@ -19,7 +19,7 @@ use Illuminate\Database\Eloquent\Relations\MorphMany;
  * A sale groups the inventory movements that make up its lines. Create and cancel sales
  * through App\Services\Sales.
  */
-#[Fillable(['uuid', 'folio', 'user_id', 'status', 'type', 'total', 'meta', 'cancelled_at', 'cancelled_by', 'cancellation_reason'])]
+#[Fillable(['uuid', 'folio', 'user_id', 'client_id', 'status', 'type', 'total', 'meta', 'cancelled_at', 'cancelled_by', 'cancellation_reason'])]
 class Sale extends Model
 {
     /** @use HasFactory<SaleFactory> */
@@ -47,6 +47,16 @@ class Sale extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class)->withTrashed();
+    }
+
+    /**
+     * A removed client stays on the sales it was part of.
+     *
+     * @return BelongsTo<Client, $this>
+     */
+    public function client(): BelongsTo
+    {
+        return $this->belongsTo(Client::class)->withTrashed();
     }
 
     /**
