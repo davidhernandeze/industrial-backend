@@ -1,0 +1,23 @@
+# La Familia server for local development: Laravel on FrankenPHP (Caddy + PHP in one
+# process), HTTP on :8000. The source is bind-mounted, so the image holds only PHP
+# and Composer. Build it through compose.yaml.
+
+ARG PHP_IMAGE=docker.io/dunglas/frankenphp:1.12-php8.5-alpine
+ARG COMPOSER_IMAGE=docker.io/library/composer:2
+
+FROM ${COMPOSER_IMAGE} AS composer
+
+FROM ${PHP_IMAGE}
+
+# One compile job: parallel builds of intl run out of memory in a 2 GiB Podman machine
+RUN IPE_PROCESSOR_COUNT=1 install-php-extensions pdo_mysql redis intl bcmath pcntl zip gd exif opcache \
+ && cp "$PHP_INI_DIR/php.ini-development" "$PHP_INI_DIR/php.ini"
+
+COPY --from=composer /usr/bin/composer /usr/bin/composer
+COPY container/php.ini $PHP_INI_DIR/conf.d/zz-lafamilia.ini
+
+ENV SERVER_NAME=:8000 \
+    SERVER_ROOT=/app/public
+
+WORKDIR /app
+EXPOSE 8000
