@@ -18,7 +18,7 @@ podman compose exec server php artisan key:generate
 podman compose exec server php artisan migrate --seed
 podman compose exec server php artisan storage:link
 podman compose exec server php artisan app:create-admin
-npm install --ignore-scripts && npm run build
+npm install --ignore-scripts && npm run build   # also builds the Filament theme
 ```
 
 After that, `podman compose up -d` starts everything.
@@ -104,17 +104,47 @@ app(Inventory::class)->record($branchProduct, MovementType::Sale, '2.5', referen
 - Movements are never edited or deleted. Correct a mistake with a new adjustment. That makes this the
   one business table without soft deletes or entity logs: each row already says who did what.
 - Quantities are decimal strings, handled with bcmath, never floats.
-- A sale is allowed without enough stock. It is flagged, and it notifies admins and that branch's
-  managers. Adjustments in the Inventario section can take stock below zero on purpose.
+- A sale is allowed without enough stock, and is always flagged. Admins and that branch's managers
+  get one notification per sale, only for products that sale took below zero, so a product already
+  negative sends nothing more. Adjustments can take stock below zero on purpose.
+- Sales and cancellations come from `App\Services\Sales`, never by hand in Inventario.
 - A product's unit in a branch is final from creation. Re-adding a removed product keeps its unit and
   its stock.
 - `inventory:reconcile` runs nightly in the `scheduler` container and logs an error if any balance
   disagrees with the ledger.
 
+## Point of sale
+
+`App\Filament\Pages\PointOfSale` is a custom Filament page for cashiers only (`role:exclusive,cashier`,
+so admins and managers are refused on purpose). It is a cashier's whole layout: they land on it after
+logging in, have no sidebar or Escritorio, and multi-branch cashiers choose their branch on the page.
+
+It uses Livewire rather than a separate SPA: prices and totals stay on the server, and a round trip
+measured about 36 ms on localhost. If a deployment proves slower, load the branch catalog into the
+browser for instant feedback. The domain logic in `App\Services\Sales` would not change.
+
+- The sale in progress lives in `App\Support\PosCart`, in the cache per cashier and branch. Nothing
+  reaches the database until it is paid, and a reload does not lose it.
+- A scan is an exact barcode or SKU lookup. The input sits behind `wire:ignore` so updates cannot
+  disturb it. Typing searches by name.
+- Each cart has a uuid, so submitting twice cannot charge twice.
+- An on-screen keyboard feeds the same search input, for touch screens.
+- Recibido is filled with the total and locked, so cash sales record no change.
+- `sale_payments` holds one row per sale today. It exists so split payments need no data migration.
+  Payments are assumed to cover the sale on creation.
+- Sale lines are `inventory_movements` referencing the sale, with `unit_price` copied at that moment.
+- Receipt printing is a planned future step.
+
+## Ventas
+
+`SaleResource` is for managers and admins. Cancelling changes the status to `cancelled` and restores
+stock through `SaleCancellation` movements, keeping the ledger append-only.
+
 ## Notifications
 
-Laravel's `notifications` table, related to users, feeds the bell in the panel. To send mail through
-Resend, follow the comments in `.env.example`; otherwise it goes to the log. Notifications run on the
+Laravel's `notifications` table, related to users, feeds the bell in the panel. Local mail goes to the
+log (`MAIL_MAILER=log`) so test sales never reach real inboxes. To send through Resend, follow the
+comments in `.env.example`. Notifications run on the
 queue, after the database commit, so a mail failure cannot undo a sale.
 
 After changing `.env`, run `podman compose restart queue scheduler`. The worker keeps the values it

@@ -89,14 +89,22 @@ class ManageInventoryMovementsTest extends TestCase
         $this->assertSame('-4.000', $this->row->fresh()->stock);
     }
 
-    public function test_a_sale_without_stock_goes_through_and_is_shown_as_flagged(): void
+    public function test_sales_cannot_be_entered_by_hand(): void
     {
-        Livewire::test(ManageInventoryMovements::class)
-            ->callAction('create', data: $this->data(MovementType::Sale, '2'))
-            ->assertHasNoFormErrors()
-            ->assertSee('Venta sin existencia');
+        foreach ([MovementType::Sale, MovementType::SaleCancellation] as $type) {
+            Livewire::test(ManageInventoryMovements::class)
+                ->callAction('create', data: $this->data($type, '2'))
+                ->assertHasFormErrors(['type']);
+        }
 
-        $this->assertSame('-2.000', $this->row->fresh()->stock);
+        $this->assertSame('0.000', $this->row->fresh()->stock);
+    }
+
+    public function test_flagged_sales_are_shown_in_the_table(): void
+    {
+        app(Inventory::class)->record($this->row, MovementType::Sale, '2');
+
+        Livewire::test(ManageInventoryMovements::class)->assertSee('Venta sin existencia');
     }
 
     public function test_the_oversold_filter_only_shows_flagged_sales(): void
@@ -194,13 +202,11 @@ class ManageInventoryMovementsTest extends TestCase
             ->assertHasFormErrors(['quantity']);
     }
 
-    public function test_purchases_and_sales_cannot_be_negative(): void
+    public function test_purchases_cannot_be_negative(): void
     {
-        foreach ([MovementType::Purchase, MovementType::Sale] as $type) {
-            Livewire::test(ManageInventoryMovements::class)
-                ->callAction('create', data: $this->data($type, '-1'))
-                ->assertHasFormErrors(['quantity']);
-        }
+        Livewire::test(ManageInventoryMovements::class)
+            ->callAction('create', data: $this->data(MovementType::Purchase, '-1'))
+            ->assertHasFormErrors(['quantity']);
     }
 
     public function test_pieces_must_be_whole_and_kilograms_can_be_fractional(): void

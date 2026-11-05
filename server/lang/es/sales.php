@@ -4,6 +4,30 @@ return [
     'model_label' => 'venta',
     'plural_model_label' => 'ventas',
 
+    'sections' => [
+        'lines' => 'Productos',
+        'payments' => 'Pago',
+        'cancellation' => 'Cancelación',
+    ],
+
+    'overview' => [
+        'today' => 'Hoy',
+        'this_month' => 'Este mes',
+        'total' => 'Ventas',
+        'count' => 'Tickets',
+        'average' => 'Ticket promedio',
+        'cancelled' => 'Canceladas',
+        'month_total' => 'Ventas del mes',
+    ],
+
+    'cancel' => [
+        'label' => 'Cancelar venta',
+        'heading' => '¿Cancelar esta venta?',
+        'description' => 'La existencia de sus productos se repondrá. Esta acción no se puede deshacer.',
+        'confirm' => 'Sí, cancelar venta',
+        'done' => 'Venta cancelada',
+    ],
+
     'statuses' => [
         'paid' => 'Pagada',
         'cancelled' => 'Cancelada',

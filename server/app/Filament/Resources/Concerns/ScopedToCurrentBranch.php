@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\Concerns;
 
+use App\Filament\Concerns\ShownInBranchSection;
 use App\Support\CurrentBranch;
 use Illuminate\Database\Eloquent\Builder;
 
@@ -11,6 +12,8 @@ use Illuminate\Database\Eloquent\Builder;
  */
 trait ScopedToCurrentBranch
 {
+    use ShownInBranchSection;
+
     public static function getEloquentQuery(): Builder
     {
         $branch = app(CurrentBranch::class)->get();

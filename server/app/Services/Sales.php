@@ -11,6 +11,7 @@ use App\Models\Branch;
 use App\Models\BranchProduct;
 use App\Models\InventoryMovement;
 use App\Models\Sale;
+use App\Models\SalePayment;
 use App\Models\User;
 use App\Notifications\SaleOutOfStock;
 use App\Support\CurrentBranch;
@@ -130,6 +131,75 @@ class Sales
     }
 
     /**
+     * Today's and this month's figures. Each query reads only its date window, so this does
+     * not slow down as the sales history grows.
+     *
+     * @return array{total: string, count: int, average: string, cancelled: int, month_total: string, by_method: array<string, string>}
+     */
+    public function overview(Branch $branch): array
+    {
+        $today = now()->startOfDay();
+
+        $sold = Sale::query()
+            ->forBranch($branch)
+            ->where('status', SaleStatus::Paid)
+            ->where('created_at', '>=', $today)
+            ->toBase()
+            ->selectRaw('COALESCE(SUM(total), 0) as total, COUNT(*) as sales')
+            ->first();
+
+        return [
+            'total' => (string) $sold->total,
+            'count' => (int) $sold->sales,
+            'average' => (int) $sold->sales === 0 ? '0' : bcdiv((string) $sold->total, (string) $sold->sales, 2),
+            'cancelled' => Sale::query()->forBranch($branch)->where('cancelled_at', '>=', $today)->count(),
+            'month_total' => (string) Sale::query()
+                ->forBranch($branch)
+                ->where('status', SaleStatus::Paid)
+                ->where('created_at', '>=', now()->startOfMonth())
+                ->sum('total'),
+            'by_method' => SalePayment::query()
+                ->join('sales', 'sales.id', '=', 'sale_payments.sale_id')
+                ->where('sales.branch_id', $branch->id)
+                ->where('sales.status', SaleStatus::Paid)
+                ->where('sales.created_at', '>=', $today)
+                ->groupBy('sale_payments.method')
+                ->selectRaw('sale_payments.method as method, SUM(sale_payments.amount) as amount')
+                ->toBase()
+                ->pluck('amount', 'method')
+                ->map(fn (mixed $amount): string => (string) $amount)
+                ->all(),
+        ];
+    }
+
+    /**
+     * Paid sales per day, oldest first and including days without sales.
+     *
+     * @return Collection<string, array{total: string, count: int}>
+     */
+    public function dailyTotals(Branch $branch, int $days): Collection
+    {
+        $rows = Sale::query()
+            ->forBranch($branch)
+            ->where('status', SaleStatus::Paid)
+            ->where('created_at', '>=', now()->subDays($days - 1)->startOfDay())
+            ->toBase()
+            ->selectRaw('DATE(created_at) as day, SUM(total) as total, COUNT(*) as sales')
+            ->groupBy('day')
+            ->get()
+            ->keyBy('day');
+
+        return collect(range($days - 1, 0))->mapWithKeys(function (int $daysAgo) use ($rows): array {
+            $day = now()->subDays($daysAgo)->toDateString();
+
+            return [$day => [
+                'total' => (string) ($rows[$day]->total ?? '0'),
+                'count' => (int) ($rows[$day]->sales ?? 0),
+            ]];
+        });
+    }
+
+    /**
      * A price times a quantity, rounded half up to cents.
      */
     public static function lineTotal(string $price, string $quantity): string
@@ -152,6 +222,12 @@ class Sales
 
         if ($rows->count() !== count($lines)) {
             throw new SaleRejected(__('sales.errors.unavailable_product'));
+        }
+
+        foreach ($lines as $quantity) {
+            if (bccomp($quantity, '0', 3) <= 0) {
+                throw new SaleRejected(__('point_of_sale.invalid_quantity'));
+            }
         }
 
         return $rows;

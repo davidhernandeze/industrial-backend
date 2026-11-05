@@ -23,6 +23,38 @@ enum ProductUnit: string implements HasLabel
     }
 
     /**
+     * How much the quantity buttons change a line.
+     */
+    public function step(): string
+    {
+        return match ($this) {
+            self::Kilogram => '0.25',
+            self::Piece => '1',
+        };
+    }
+
+    /**
+     * The weights sold most often, for picking one without typing.
+     *
+     * @return array<string, string>
+     */
+    public function commonQuantities(): array
+    {
+        return match ($this) {
+            self::Kilogram => [
+                '0.1' => '100 g',
+                '0.25' => '250 g',
+                '0.5' => '500 g',
+                '0.75' => '750 g',
+                '1' => '1 kg',
+                '1.5' => '1.5 kg',
+                '2' => '2 kg',
+            ],
+            self::Piece => [],
+        };
+    }
+
+    /**
      * A quantity for display, such as "1.5 kg" or "12 pza".
      */
     public function format(string $quantity): string

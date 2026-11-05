@@ -1,0 +1,27 @@
+<?php
+
+return [
+    'title' => 'Punto de venta',
+    'scan_placeholder' => 'Escanea un código o busca un producto',
+    'empty' => 'Escanea un producto para comenzar la venta.',
+    'not_found' => 'No se encontró ":code" en esta sucursal.',
+    'invalid_quantity' => 'La cantidad no es válida.',
+    'remove' => 'Quitar',
+    'increase' => 'Aumentar cantidad',
+    'decrease' => 'Disminuir cantidad',
+    'weight' => 'Peso',
+    'keyboard' => [
+        'space' => 'Espacio',
+        'backspace' => 'Borrar',
+        'clear' => 'Limpiar',
+        'search' => 'Buscar',
+    ],
+    'checkout' => 'Cobrar',
+    'confirm' => 'Confirmar venta',
+    'clear' => 'Vaciar venta',
+    'clear_confirmation' => '¿Vaciar la venta actual?',
+    'completed' => 'Venta #:folio registrada',
+    'total_changed' => 'Los precios cambiaron. Revisa el total y cobra de nuevo.',
+    'lines' => '{0} Sin productos|{1} :count producto|[2,*] :count productos',
+    'shortcut_hint' => 'F2 para cobrar',
+];

@@ -1,0 +1,10 @@
+@import '../../../../vendor/filament/filament/resources/css/theme.css';
+
+@source '../../../../app/Filament/**/*';
+@source '../../../../resources/views/filament/**/*';
+
+/* Only cashiers get top navigation, and their layout has no menu to open. */
+.fi-body-has-top-navigation .fi-topbar-open-sidebar-btn,
+.fi-body-has-top-navigation .fi-sidebar {
+    display: none;
+}

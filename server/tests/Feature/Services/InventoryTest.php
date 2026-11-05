@@ -5,17 +5,14 @@ namespace Tests\Feature\Services;
 use App\Enums\MovementType;
 use App\Enums\ProductUnit;
 use App\Enums\Role;
-use App\Models\Branch;
 use App\Models\BranchProduct;
 use App\Models\InventoryMovement;
 use App\Models\Product;
 use App\Models\User;
-use App\Notifications\SaleOutOfStock;
 use App\Services\Inventory;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Notification;
 use InvalidArgumentException;
@@ -175,15 +172,6 @@ class InventoryTest extends TestCase
         $this->row->update(['unit' => ProductUnit::Piece]);
     }
 
-    public function test_a_sale_reaching_exactly_zero_is_not_oversold(): void
-    {
-        $this->inventory->record($this->row, MovementType::Purchase, '2');
-        $sale = $this->inventory->record($this->row, MovementType::Sale, '2');
-
-        $this->assertFalse($sale->isOversold());
-        Notification::assertNothingSent();
-    }
-
     public function test_a_sale_without_stock_is_recorded_and_flagged(): void
     {
         $sale = $this->inventory->record($this->row, MovementType::Sale, '3');
@@ -193,60 +181,47 @@ class InventoryTest extends TestCase
         $this->assertSame([$sale->id], InventoryMovement::oversold()->pluck('id')->all());
     }
 
+    public function test_a_sale_reaching_exactly_zero_is_not_oversold(): void
+    {
+        $this->inventory->record($this->row, MovementType::Purchase, '2');
+        $sale = $this->inventory->record($this->row, MovementType::Sale, '2');
+
+        $this->assertFalse($sale->isOversold());
+    }
+
     public function test_a_negative_adjustment_is_not_flagged_as_a_sale(): void
     {
         $this->inventory->record($this->row, MovementType::Adjustment, '-3');
 
         $this->assertSame(0, InventoryMovement::oversold()->count());
-        Notification::assertNothingSent();
     }
 
-    public function test_an_oversold_sale_notifies_admins_and_only_that_branchs_managers(): void
+    public function test_only_the_movement_crossing_zero_went_negative(): void
     {
-        $admin = User::factory()->admin()->create();
-        $manager = User::factory()->create(['role' => Role::BranchManager]);
-        $manager->branches()->attach($this->row->branch_id);
-        $otherManager = User::factory()->create(['role' => Role::BranchManager]);
-        $otherManager->branches()->attach(Branch::factory()->create());
-        $cashier = User::factory()->create(['role' => Role::Cashier]);
-        $cashier->branches()->attach($this->row->branch_id);
-        $deleted = User::factory()->admin()->create();
-        $deleted->delete();
+        $this->inventory->record($this->row, MovementType::Purchase, '1');
 
-        $this->inventory->record($this->row, MovementType::Sale, '1');
+        $crossing = $this->inventory->record($this->row, MovementType::Sale, '2');
+        $deeper = $this->inventory->record($this->row, MovementType::Sale, '1');
 
-        Notification::assertSentTo([$admin, $manager], SaleOutOfStock::class);
-        Notification::assertNotSentTo([$otherManager, $cashier, $deleted], SaleOutOfStock::class);
+        $this->assertTrue($crossing->wentNegative());
+        $this->assertFalse($deeper->wentNegative());
     }
 
-    public function test_nothing_is_notified_when_the_transaction_rolls_back(): void
+    public function test_recording_a_movement_sends_no_notification(): void
     {
         User::factory()->admin()->create();
 
-        try {
-            DB::transaction(function (): void {
-                $this->inventory->record($this->row, MovementType::Sale, '1');
-
-                throw new RuntimeException('The sale failed.');
-            });
-        } catch (RuntimeException) {
-            //
-        }
+        $this->inventory->record($this->row, MovementType::Sale, '5');
 
         Notification::assertNothingSent();
     }
 
-    public function test_a_failing_notification_does_not_fail_the_sale(): void
+    public function test_a_sale_cancellation_adds_stock_back(): void
     {
-        Exceptions::fake();
-        User::factory()->admin()->create();
-        Notification::shouldReceive('send')->andThrow(new RuntimeException('Redis is down.'));
+        $this->inventory->record($this->row, MovementType::Sale, '2');
+        $this->inventory->record($this->row, MovementType::SaleCancellation, '2');
 
-        $sale = $this->inventory->record($this->row, MovementType::Sale, '1');
-
-        $this->assertTrue($sale->exists);
-        $this->assertSame('-1.000', $this->row->fresh()->stock);
-        Exceptions::assertReported(RuntimeException::class);
+        $this->assertSame('0.000', $this->row->fresh()->stock);
     }
 
     public function test_reconcile_passes_when_stock_matches_the_ledger(): void

@@ -151,7 +151,7 @@ class UserTest extends TestCase
     public function test_a_signed_in_user_is_locked_out_when_their_last_branch_is_removed(): void
     {
         $branch = Branch::factory()->create();
-        $user = User::factory()->create();
+        $user = User::factory()->create(['role' => Role::Driver]);
         $user->branches()->attach($branch);
 
         $this->actingAs($user)->get('/admin')->assertOk();

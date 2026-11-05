@@ -276,10 +276,10 @@ class ManageUsersTest extends TestCase
 
     public function test_non_admins_do_not_see_admin_modules_in_the_menu(): void
     {
-        $cashier = User::factory()->create();
-        $cashier->branches()->attach(Branch::factory()->create());
+        $driver = User::factory()->create(['role' => Role::Driver]);
+        $driver->branches()->attach(Branch::factory()->create());
 
-        $this->actingAs($cashier)->get('/admin')
+        $this->actingAs($driver)->get('/admin')
             ->assertOk()
             ->assertSee('Escritorio')
             ->assertDontSee('Usuarios')

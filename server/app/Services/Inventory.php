@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Enums\MovementType;
+use App\Models\Branch;
 use App\Models\BranchProduct;
 use App\Models\InventoryMovement;
 use Illuminate\Database\Eloquent\Model;
@@ -79,6 +80,24 @@ class Inventory
             'oversold' => (int) $totals->oversold,
             'last' => InventoryMovement::query()->where('branch_product_id', $branchProduct->getKey())->latest('id')->first(),
         ];
+    }
+
+    /**
+     * What the branch's stock would sell for. Negative balances do not subtract from it.
+     */
+    public function valueAtSalePrice(Branch $branch): string
+    {
+        return (string) BranchProduct::query()
+            ->forBranch($branch)
+            ->where('stock', '>', 0)
+            ->selectRaw('COALESCE(SUM(stock * price), 0) as value')
+            ->toBase()
+            ->value('value');
+    }
+
+    public function negativeStockCount(Branch $branch): int
+    {
+        return BranchProduct::query()->forBranch($branch)->where('stock', '<', 0)->count();
     }
 
     /**

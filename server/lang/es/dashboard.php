@@ -1,0 +1,27 @@
+<?php
+
+return [
+    'title' => 'Escritorio',
+    'today' => 'Hoy',
+    'this_month' => 'Este mes',
+    'sales' => 'Ventas',
+    'sales_today' => 'Ventas de hoy',
+    'tickets' => 'Tickets',
+    'average_ticket' => 'Ticket promedio',
+    'month_sales' => 'Ventas del mes',
+    'inventory_value' => 'Valor del inventario',
+    'at_sale_price' => 'A precio de venta',
+    'negative_stock' => 'Existencia negativa',
+    'products' => 'Productos',
+    'no_sales_yesterday' => 'Sin ventas ayer',
+    'versus_yesterday' => ':change% respecto a ayer',
+    'sales_chart' => 'Ventas de los últimos :days días',
+    'payment_methods_chart' => 'Formas de pago de hoy',
+    'notifications' => 'Notificaciones',
+    'notification' => 'Notificación',
+    'no_notifications' => 'Sin notificaciones',
+    'date' => 'Fecha',
+    'open' => 'Abrir',
+    'mark_as_read' => 'Marcar como leída',
+    'mark_all_as_read' => 'Marcar todas como leídas',
+];

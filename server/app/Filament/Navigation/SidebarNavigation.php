@@ -2,13 +2,16 @@
 
 namespace App\Filament\Navigation;
 
-use App\Filament\Resources\Concerns\ScopedToCurrentBranch;
+use App\Enums\Role;
+use App\Filament\Concerns\ShownInBranchSection;
 use Filament\Facades\Filament;
 use Filament\Navigation\NavigationItem;
+use Illuminate\Support\Collection;
 
 /**
  * Splits the sidebar into entities that exist on their own and modules of the current branch.
- * A resource moves to the branch section by using ScopedToCurrentBranch.
+ * A resource moves to the branch section through ScopedToCurrentBranch, and a page through
+ * ShownInBranchSection.
  */
 class SidebarNavigation
 {
@@ -17,13 +20,11 @@ class SidebarNavigation
      */
     public static function globalItems(): array
     {
-        $panel = Filament::getCurrentOrDefaultPanel();
+        if (auth()->user()?->hasRole(Role::Cashier)) {
+            return [];
+        }
 
-        $pages = collect($panel->getPages());
-        $resources = collect($panel->getResources())
-            ->reject(fn (string $resource): bool => self::isBranchScoped($resource));
-
-        return self::itemsFor($pages->merge($resources)->all());
+        return self::itemsFor(self::navigable()->reject(fn (string $class): bool => self::isBranchScoped($class))->all());
     }
 
     /**
@@ -31,10 +32,17 @@ class SidebarNavigation
      */
     public static function branchItems(): array
     {
-        $resources = collect(Filament::getCurrentOrDefaultPanel()->getResources())
-            ->filter(fn (string $resource): bool => self::isBranchScoped($resource));
+        return self::itemsFor(self::navigable()->filter(fn (string $class): bool => self::isBranchScoped($class))->all());
+    }
 
-        return self::itemsFor($resources->all());
+    /**
+     * @return Collection<int, class-string>
+     */
+    private static function navigable(): Collection
+    {
+        $panel = Filament::getCurrentOrDefaultPanel();
+
+        return collect($panel->getPages())->merge($panel->getResources());
     }
 
     /**
@@ -51,8 +59,8 @@ class SidebarNavigation
             ->all();
     }
 
-    public static function isBranchScoped(string $resource): bool
+    public static function isBranchScoped(string $class): bool
     {
-        return in_array(ScopedToCurrentBranch::class, class_uses_recursive($resource), true);
+        return in_array(ShownInBranchSection::class, class_uses_recursive($class), true);
     }
 }

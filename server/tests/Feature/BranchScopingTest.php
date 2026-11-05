@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Enums\Role;
 use App\Models\Branch;
 use App\Models\User;
 use App\Support\CurrentBranch;
@@ -34,7 +35,7 @@ class BranchScopingTest extends TestCase
             $table->timestamps();
         });
 
-        $this->user = User::factory()->create();
+        $this->user = User::factory()->create(['role' => Role::Driver]);
         $this->centro = Branch::factory()->create(['name' => 'Centro']);
         $this->norte = Branch::factory()->create(['name' => 'Norte']);
         $this->user->branches()->attach([$this->centro->id, $this->norte->id]);
@@ -248,7 +249,7 @@ class BranchScopingTest extends TestCase
 
         $this->get('/admin')
             ->assertOk()
-            ->assertSeeInOrder(['Escritorio', 'id="current-branch"', 'Fixture module'], escape: false);
+            ->assertSeeInOrder(['id="current-branch"', 'Fixture module'], escape: false);
     }
 
     public function test_a_branch_scoped_resource_is_hidden_when_there_is_no_branch(): void

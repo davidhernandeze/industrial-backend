@@ -9,21 +9,9 @@
         @if ($hasNoBranches)
             <p class="fi-sidebar-group-label" style="padding: 0 0.5rem;">{{ __('branches.none_assigned') }}</p>
         @elseif ($currentBranch->hasChoice())
-            <form method="POST" action="{{ route('filament.admin.current-branch') }}" style="padding: 0 0.5rem;">
-                @csrf
-
-                <label for="current-branch" class="fi-sidebar-group-label" style="display: block; margin-bottom: 0.5rem;">
-                    {{ __('branches.current') }}
-                </label>
-
-                <x-filament::input.wrapper>
-                    <x-filament::input.select id="current-branch" name="branch_id" onchange="this.form.submit()">
-                        @foreach ($currentBranch->available() as $branch)
-                            <option value="{{ $branch->getKey() }}" @selected($branch->is($currentBranch->get()))>{{ $branch->name }}</option>
-                        @endforeach
-                    </x-filament::input.select>
-                </x-filament::input.wrapper>
-            </form>
+            <div style="padding: 0 0.5rem;">
+                @include('filament.sidebar.branch-selector')
+            </div>
         @endif
 
         @if (filled($items))

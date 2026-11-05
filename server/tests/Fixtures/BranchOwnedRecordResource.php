@@ -12,7 +12,7 @@ class BranchOwnedRecordResource extends RoleGuardedResource
 
     protected static ?string $model = BranchOwnedRecord::class;
 
-    protected static string|array $routeMiddleware = 'role:cashier';
+    protected static string|array $routeMiddleware = 'role:cashier,driver';
 
     protected static ?int $navigationSort = 1;
 

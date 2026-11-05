@@ -146,6 +146,14 @@ class ProductInventoryOverviewTest extends TestCase
         $this->assertSame('4.000', $summary['sold']);
     }
 
+    public function test_cancelled_sales_do_not_count_as_sold(): void
+    {
+        $this->inventory->record($this->row, MovementType::Sale, '4');
+        $this->inventory->record($this->row, MovementType::SaleCancellation, '1.5');
+
+        $this->assertSame('2.500', $this->inventory->summaryFor($this->row->fresh(), 30)['sold']);
+    }
+
     public function test_it_counts_sales_without_stock_but_not_negative_adjustments(): void
     {
         $this->inventory->record($this->row, MovementType::Adjustment, '-1');
