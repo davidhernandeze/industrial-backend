@@ -5,19 +5,19 @@ namespace Database\Seeders;
 use App\Enums\SettingType;
 use App\Models\Branch;
 use App\Models\Setting;
-use Illuminate\Database\Seeder;
 
-class SettingSeeder extends Seeder
+class SettingSeeder extends DefaultsSeeder
 {
+    protected string $model = Setting::class;
+
     /**
-     * Create the settings the application expects, keeping any existing values.
+     * @return list<array<string, mixed>>
      */
-    public function run(): void
+    protected function defaults(): array
     {
-        Setting::withTrashed()->firstOrCreate(['key' => 'company_name'], ['value' => 'La Familia']);
-        Setting::withTrashed()->firstOrCreate(['key' => 'main_branch'], [
-            'type' => SettingType::Entity,
-            'entity_type' => Branch::class,
-        ]);
+        return [
+            ['key' => 'company_name', 'value' => 'La Familia'],
+            ['key' => 'main_branch', 'type' => SettingType::Entity, 'entity_type' => Branch::class],
+        ];
     }
 }
