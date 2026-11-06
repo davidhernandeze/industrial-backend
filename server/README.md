@@ -52,6 +52,29 @@ name to `lang/es/settings.php`, then run `php artisan db:seed`. Existing values 
 `company_name` is the panel's brand name; `APP_NAME` is the fallback when it is empty. Read a
 setting with `Setting::valueOf('company_name')`.
 
+`main_branch` holds a branch or nothing, chosen at `/admin/settings`. Nothing reads it yet.
+
+Branch settings work the same way, one value per branch. `branch_settings` lists what can be
+configured and holds no value; each branch's value is a row in `branch_setting_values`, created the
+first time the branch sets it and kept when it is emptied. A branch has one row per setting.
+Managers and admins edit the current branch's values at `/admin/branch-settings`, which lists every
+setting even when the branch has no value. To add one, add it to `SettingSeeder` with
+`BranchSetting::withTrashed()->firstOrCreate()`, and its Spanish name to `lang/es/branch_settings.php`.
+Read a value with `$branch->setting('key')`; all of a branch's values load in one query.
+
+Both kinds have a `type` (`App\Enums\SettingType`) that decides the form input and what the reader
+gets back, with null for empty:
+
+| Type | Stored in | Read as |
+| --- | --- | --- |
+| `string` | `value` | string |
+| `number` | `value` | int or float |
+| `price` | `value` | string with two decimals, like every money column |
+| `entity` | `entity_type` and `entity_id` | the model, or null if it was deleted |
+
+An entity setting sets `entity_type` to a model class with a `name` attribute. Branch settings keep
+`entity_type` on `branch_settings` and `entity_id` on each branch's row.
+
 The application timezone is `America/Mexico_City`, and timestamps are stored in that timezone.
 
 ## Users and roles

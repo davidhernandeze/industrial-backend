@@ -2,37 +2,59 @@
 
 namespace App\Models;
 
+use App\Enums\SettingType;
 use App\Models\Concerns\Auditable;
+use App\Models\Concerns\HasTypedValue;
+use App\Models\Concerns\LabeledByKey;
 use Database\Factories\SettingFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
-use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Facades\Lang;
+use Illuminate\Database\Eloquent\Relations\MorphTo;
 
-#[Fillable(['key', 'value'])]
+#[Fillable(['key', 'type', 'value', 'entity_type', 'entity_id'])]
 class Setting extends Model
 {
     /** @use HasFactory<SettingFactory> */
-    use Auditable, HasFactory;
+    use Auditable, HasFactory, HasTypedValue, LabeledByKey;
 
     /**
-     * Get the stored value of a setting, memoized for the current request.
+     * @var array<string, string>
      */
-    public static function valueOf(string $key): ?string
+    protected $attributes = [
+        'type' => 'string',
+    ];
+
+    /**
+     * Get the attributes that should be cast.
+     *
+     * @return array<string, string>
+     */
+    protected function casts(): array
     {
-        return once(fn (): ?string => static::query()->where('key', $key)->value('value'));
+        return [
+            'type' => SettingType::class,
+        ];
     }
 
     /**
-     * The translated name of the setting, or its key when no translation exists.
+     * Get the value of a setting parsed by its type, memoized for the current request.
      */
-    protected function label(): Attribute
+    public static function valueOf(string $key): mixed
     {
-        return Attribute::get(function (): string {
-            $translationKey = "settings.keys.{$this->key}";
+        return once(fn (): mixed => static::query()->where('key', $key)->first()?->parsed_value);
+    }
 
-            return Lang::has($translationKey) ? __($translationKey) : $this->key;
-        });
+    /**
+     * @return MorphTo<Model, $this>
+     */
+    public function entity(): MorphTo
+    {
+        return $this->morphTo();
+    }
+
+    public function settingType(): SettingType
+    {
+        return $this->type;
     }
 }

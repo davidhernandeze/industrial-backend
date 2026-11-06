@@ -12,6 +12,7 @@ use Filament\Tables\Concerns\InteractsWithTable;
 use Filament\Tables\Contracts\HasTable;
 use Filament\Tables\Table;
 use Illuminate\Contracts\Support\Htmlable;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\Lang;
@@ -55,7 +56,7 @@ abstract class EntityHistory extends Page implements HasTable
     {
         return $table
             ->query(fn () => Activity::query()
-                ->whereMorphedTo('subject', $this->getRecord())
+                ->whereMorphedTo('subject', $this->subject())
                 ->with(['causer' => fn (MorphTo $causer) => $causer->withTrashed()]))
             ->defaultSort('id', 'desc')
             ->emptyStateHeading(__('history.empty'))
@@ -83,6 +84,14 @@ abstract class EntityHistory extends Page implements HasTable
                     ->wrap()
                     ->placeholder('—'),
             ]);
+    }
+
+    /**
+     * The record whose logs are shown.
+     */
+    protected function subject(): Model
+    {
+        return $this->getRecord();
     }
 
     /**
@@ -117,7 +126,7 @@ abstract class EntityHistory extends Page implements HasTable
             $value === null => '—',
             $this->relatedName($attribute, $value) !== null => $this->relatedName($attribute, $value),
             $this->enumCast($attribute) !== null => $this->enumCast($attribute)::from($value)->getLabel(),
-            $this->getRecord()->hasCast($attribute, ['date', 'custom_datetime']) => Date::parse($value)->format('d/m/Y'),
+            $this->subject()->hasCast($attribute, ['date', 'custom_datetime']) => Date::parse($value)->format('d/m/Y'),
             is_scalar($value) => (string) $value,
             default => (string) json_encode($value, JSON_UNESCAPED_UNICODE),
         };
@@ -130,11 +139,11 @@ abstract class EntityHistory extends Page implements HasTable
     {
         $relation = Str::camel(Str::beforeLast($attribute, '_id'));
 
-        if (! str_ends_with($attribute, '_id') || ! method_exists($this->getRecord(), $relation)) {
+        if (! str_ends_with($attribute, '_id') || ! method_exists($this->subject(), $relation)) {
             return null;
         }
 
-        return $this->getRecord()->{$relation}()->getRelated()->newQueryWithoutScopes()->find($id)?->name;
+        return $this->subject()->{$relation}()->getRelated()->newQueryWithoutScopes()->find($id)?->name;
     }
 
     /**
@@ -142,14 +151,14 @@ abstract class EntityHistory extends Page implements HasTable
      */
     private function enumCast(string $attribute): ?string
     {
-        $cast = $this->getRecord()->getCasts()[$attribute] ?? null;
+        $cast = $this->subject()->getCasts()[$attribute] ?? null;
 
         return is_string($cast) && enum_exists($cast) ? $cast : null;
     }
 
     private function attributeLabel(string $attribute): string
     {
-        $translationFile = Str::snake(Str::pluralStudly(class_basename($this->getRecord())));
+        $translationFile = Str::snake(Str::pluralStudly(class_basename($this->subject())));
         $translationKey = "{$translationFile}.fields.{$attribute}";
 
         return Lang::has($translationKey) ? __($translationKey) : Str::headline($attribute);

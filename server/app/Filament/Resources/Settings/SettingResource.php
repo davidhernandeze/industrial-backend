@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\Settings;
 
 use App\Filament\Actions\HistoryAction;
+use App\Filament\Forms\SettingValueField;
 use App\Filament\Resources\RoleGuardedResource;
 use App\Filament\Resources\Settings\Pages\ManageSettings;
 use App\Filament\Resources\Settings\Pages\SettingHistory;
@@ -12,7 +13,6 @@ use BackedEnum;
 use Filament\Actions\ActionGroup;
 use Filament\Actions\EditAction;
 use Filament\Actions\ViewAction;
-use Filament\Forms\Components\Textarea;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
@@ -54,11 +54,8 @@ class SettingResource extends RoleGuardedResource
     public static function form(Schema $schema): Schema
     {
         return $schema
-            ->components([
-                Textarea::make('value')
-                    ->label(fn (Setting $record): string => $record->label)
-                    ->rows(3)
-                    ->maxLength(65535),
+            ->components(fn (Setting $record): array => [
+                SettingValueField::make($record->type, $record->entity_type, $record->label),
             ])
             ->columns(1);
     }
@@ -71,7 +68,9 @@ class SettingResource extends RoleGuardedResource
                     ->label(__('settings.fields.name')),
                 TextEntry::make('key')
                     ->label(__('settings.fields.key')),
-                TextEntry::make('value')
+                TextEntry::make('type')
+                    ->label(__('settings.fields.type')),
+                TextEntry::make('display_value')
                     ->label(__('settings.fields.value'))
                     ->placeholder('—'),
             ]);
@@ -85,7 +84,7 @@ class SettingResource extends RoleGuardedResource
             ->columns([
                 TextColumn::make('label')
                     ->label(__('settings.fields.name')),
-                TextColumn::make('value')
+                TextColumn::make('display_value')
                     ->label(__('settings.fields.value'))
                     ->limit(80)
                     ->placeholder('—'),
